@@ -45,11 +45,9 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: focusfill-${{ matrix.browser }}
-          path: |
-            .output/*.zip
-            .output/${{ matrix.browser }}-*/
-          if-no-files-found: error
+            name: focusfill-${{ matrix.browser }}
+            path: .output/*.zip
+            if-no-files-found: error
 
   release:
     name: Create Release

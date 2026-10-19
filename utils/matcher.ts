@@ -27,10 +27,57 @@ const AUTOCOMPLETE_MAP: Record<string, string> = {
   "address-line2": "address",
 };
 
-const TYPE_MAP: Record<string, string> = {
-  email: "email",
-  tel: "phone",
-};
+// 命中这些角色的祖先区域时，整个输入框不参与匹配
+const EXCLUDE_ROLES = new Set([
+  "search",
+  "navigation",
+  "banner",
+  "contentinfo",
+  "complementary",
+]);
+
+// class / id 命中这些模式的祖先区域同样排除
+const EXCLUDE_REGION_PATTERNS = [
+  /search/i,
+  /nav/i,
+  /menu/i,
+  /comment/i,
+  /filter/i,
+  /sort/i,
+  /toolbar/i,
+  /sidebar/i,
+  /footer/i,
+];
+
+// placeholder / aria-label 包含这些词时视为非表单字段
+const EXCLUDE_PLACEHOLDER_WORDS = [
+  "搜索",
+  "查找",
+  "筛选",
+  "过滤",
+  "查询",
+  "search",
+  "filter",
+  "query",
+  "find",
+];
+
+// 容器文本包含这些词时视为说明性文字，不参与匹配
+const BLOCK_CONTAINER_WORDS = [
+  "搜索",
+  "查找",
+  "筛选",
+  "过滤",
+  "查询",
+  "search",
+  "filter",
+  "query",
+  "find",
+];
+
+const CONTAINER_MAX_DEPTH = 3;
+const CONTAINER_MAX_TEXT_LENGTH = 30;
+const CONTAINER_MAX_TEXT_NODES = 3;
 
 export function isFillable(el: Element): el is HTMLElement {
   if (!(el instanceof HTMLElement)) return false;
@@ -76,6 +123,31 @@ function findByKey(fields: FieldRule[], key: string): FieldRule | null {
   return fields.find((f) => f.key === key) ?? null;
 }
 
+function isExcludedRegion(el: HTMLElement): boolean {
+  let cur: HTMLElement | null = el;
+  let depth = 0;
+  while (cur && depth < 8) {
+    const role = cur.getAttribute("role");
+    if (role && EXCLUDE_ROLES.has(role)) return true;
+
+    const cls = typeof cur.className === "string" ? cur.className : "";
+    const id = cur.id || "";
+    const combined = `${cls} ${id}`.trim();
+    if (combined && EXCLUDE_REGION_PATTERNS.some((p) => p.test(combined))) {
+      return true;
+    }
+
+    cur = cur.parentElement;
+    depth++;
+  }
+  return false;
+}
+
+function isExcludedWord(text: string, words: string[]): boolean {
+  const lower = text.toLowerCase();
+  return words.some((w) => lower.includes(w));
+}
+
 function autocompleteMatch(
   el: HTMLElement,
   fields: FieldRule[],
@@ -92,13 +164,6 @@ function autocompleteMatch(
     }
   }
   return null;
-}
-
-function typeMatch(el: HTMLElement, fields: FieldRule[]): FieldRule | null {
-  if (!(el instanceof HTMLInputElement)) return null;
-  const key = TYPE_MAP[el.type];
-  if (!key) return null;
-  return findByKey(fields, key);
 }
 
 function attrMatch(el: HTMLElement, aliases: string[]): boolean {
@@ -140,54 +205,69 @@ function collectContainerText(container: HTMLElement): string {
       if (!parent) return NodeFilter.FILTER_REJECT;
       const tag = parent.tagName;
       if (
-        tag === "SCRIPT" ||
-        tag === "STYLE" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        tag === "OPTION" ||
-        tag === "BUTTON"
+        [
+          "SCRIPT",
+          "STYLE",
+          "TEXTAREA",
+          "SELECT",
+          "OPTION",
+          "BUTTON",
+          "INPUT",
+        ].includes(tag)
       ) {
         return NodeFilter.FILTER_REJECT;
       }
       const text = node.textContent?.trim();
       if (!text) return NodeFilter.FILTER_REJECT;
-      if (text.length > 60) return NodeFilter.FILTER_REJECT;
+      // 单节点过长，视为说明文字
+      if (text.length > 20) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     },
   });
+
   const parts: string[] = [];
   let node: Node | null;
-  while ((node = walker.nextNode())) {
-    const text = node.textContent?.trim();
-    if (text) parts.push(text);
-  }
-  return parts.join(" ");
-}
+  let totalLen = 0;
+  let count = 0;
 
-function collectAncestorTexts(el: HTMLElement, maxDepth = 6): string[] {
-  const texts: string[] = [];
-  let cur = el.parentElement;
-  let depth = 0;
-  while (cur && depth < maxDepth) {
-    const fillables = Array.from(
-      cur.querySelectorAll("input, textarea, select"),
-    ).filter(isFillable);
-    if (fillables.length === 1 && fillables[0] === el) {
-      const text = collectContainerText(cur);
-      if (text) texts.push(text);
-    }
-    cur = cur.parentElement;
-    depth++;
+  while ((node = walker.nextNode()) && count < CONTAINER_MAX_TEXT_NODES) {
+    const text = node.textContent?.trim();
+    if (!text) continue;
+    if (totalLen + text.length > CONTAINER_MAX_TEXT_LENGTH) break;
+    parts.push(text);
+    totalLen += text.length;
+    count++;
   }
-  return texts;
+
+  return parts.join(" ");
 }
 
 function containerTextMatch(
   el: HTMLElement,
   fields: FieldRule[],
 ): FieldRule | null {
-  const texts = collectAncestorTexts(el);
+  const texts: string[] = [];
+  let cur = el.parentElement;
+  let depth = 0;
+
+  while (cur && depth < CONTAINER_MAX_DEPTH) {
+    const fillables = Array.from(
+      cur.querySelectorAll("input, textarea, select"),
+    ).filter(isFillable);
+
+    if (fillables.length === 1 && fillables[0] === el) {
+      const text = collectContainerText(cur);
+      if (text && !isExcludedWord(text, BLOCK_CONTAINER_WORDS)) {
+        texts.push(text);
+      }
+    }
+
+    cur = cur.parentElement;
+    depth++;
+  }
+
   if (texts.length === 0) return null;
+
   for (const rule of fields) {
     if (rule.keywords.length === 0) continue;
     if (texts.some((t) => rule.keywords.some((k) => textMatch(t, k)))) {
@@ -200,15 +280,15 @@ function containerTextMatch(
 function placeholderOrAriaMatch(el: HTMLElement, keywords: string[]): boolean {
   if (keywords.length === 0) return false;
   const field = el as HTMLInputElement | HTMLTextAreaElement;
-  if (
-    field.placeholder &&
-    keywords.some((k) => textMatch(field.placeholder, k))
-  ) {
-    return true;
-  }
+
+  const candidates: string[] = [];
+  if (field.placeholder) candidates.push(field.placeholder);
   const aria = el.getAttribute("aria-label");
-  if (aria && keywords.some((k) => textMatch(aria, k))) {
-    return true;
+  if (aria) candidates.push(aria);
+
+  for (const text of candidates) {
+    if (isExcludedWord(text, EXCLUDE_PLACEHOLDER_WORDS)) continue;
+    if (keywords.some((k) => textMatch(text, k))) return true;
   }
   return false;
 }
@@ -217,7 +297,10 @@ export function matchField(
   el: HTMLElement,
   fields: FieldRule[],
 ): FieldRule | null {
-  // 1. autocomplete 标准属性（最高优先级）
+  // 0. 命中排除区域直接不匹配
+  if (isExcludedRegion(el)) return null;
+
+  // 1. autocomplete 标准属性
   const acMatch = autocompleteMatch(el, fields);
   if (acMatch) return acMatch;
 
@@ -231,15 +314,15 @@ export function matchField(
     if (labelForMatch(el, rule.keywords)) return rule;
   }
 
-  // 4. 就近容器文本
+  // 4. 就近容器文本（收紧后）
   const containerMatch = containerTextMatch(el, fields);
   if (containerMatch) return containerMatch;
 
-  // 5. placeholder / aria-label
+  // 5. placeholder / aria-label（排除搜索类词）
   for (const rule of fields) {
     if (placeholderOrAriaMatch(el, rule.keywords)) return rule;
   }
 
-  // 6. type 兜底（最低优先级）
-  return typeMatch(el, fields);
+  // 6. type 兜底已移除
+  return null;
 }

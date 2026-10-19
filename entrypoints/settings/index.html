@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FocusFill 设置</title>
+    <style>
+        :root {
+            --bg: #ffffff;
+            --fg: #1f2328;
+            --muted: #656d76;
+            --border: #d0d7de;
+            --accent: #007aff;
+            --primary: #1f883d;
+            --danger: #cf222e;
+            --input-bg: #ffffff;
+            --input-focus-shadow: rgba(0, 122, 255, 0.15);
+            --hint-bg: #f6f8fa;
+            --code-bg: #eef1f4;
+            --btn-bg: #f6f8fa;
+            --btn-hover: #eef1f4;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0d1117;
+                --fg: #e6edf3;
+                --muted: #8b949e;
+                --border: #30363d;
+                --accent: #0a84ff;
+                --primary: #3fb950;
+                --danger: #da3633;
+                --input-bg: #0d1117;
+                --input-focus-shadow: rgba(10, 132, 255, 0.25);
+                --hint-bg: #161b22;
+                --code-bg: #21262d;
+                --btn-bg: #21262d;
+                --btn-hover: #30363d;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                "Microsoft YaHei", sans-serif;
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 24px 20px 60px;
+            color: var(--fg);
+            background: var(--bg);
+            line-height: 1.5;
+        }
+
+        h1 {
+            font-size: 20px;
+            margin: 0 0 6px;
+        }
+
+        .sub {
+            color: var(--muted);
+            font-size: 13px;
+            margin-bottom: 14px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 56vh;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+            font-size: 13px;
+            line-height: 1.55;
+            resize: vertical;
+            outline: none;
+            background: var(--input-bg);
+            color: var(--fg);
+        }
+
+        textarea:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--input-focus-shadow);
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--btn-bg);
+            color: var(--fg);
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: var(--btn-hover);
+        }
+
+        button.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #ffffff;
+        }
+
+        button.primary:hover {
+            filter: brightness(0.95);
+        }
+
+        button.danger {
+            background: var(--danger);
+            border-color: var(--danger);
+            color: #ffffff;
+        }
+
+        button.danger:hover {
+            filter: brightness(0.95);
+        }
+
+        button.ghost {
+            background: transparent;
+        }
+
+        button.ghost:hover {
+            background: var(--btn-hover);
+        }
+
+        .status {
+            font-size: 13px;
+            color: var(--muted);
+            margin-left: auto;
+        }
+
+        .status.ok {
+            color: var(--primary);
+        }
+
+        .status.err {
+            color: var(--danger);
+        }
+
+        .hint {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 16px;
+            background: var(--hint-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 14px;
+            line-height: 1.75;
+        }
+
+        .hint code,
+        .hint kbd {
+            background: var(--code-bg);
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        }
+
+        .hint kbd {
+            border: 1px solid var(--border);
+        }
+    </style>
+</head>
+
+<body>
+    <h1>FocusFill 设置</h1>
+    <p class="sub">编辑 <code>fields</code> 数组。保存后立即生效，无需刷新页面。</p>
+
+    <textarea id="editor" spellcheck="false"></textarea>
+
+    <div class="actions">
+        <button id="btn-save" class="primary">保存</button>
+        <button id="btn-format">格式化</button>
+        <button id="btn-test" class="ghost">打开测试页</button>
+        <button id="btn-reset" class="danger">重置为默认</button>
+        <span id="status" class="status"></span>
+    </div>
+
+    <div class="hint">
+        每个字段结构：<br>
+        <code>key</code>：唯一标识，如 <code>name</code><br>
+        <code>label</code>：显示名，如 <code>姓名</code>（显示在小点 title 上）<br>
+        <code>keywords</code>：文本关键词数组，匹配页面上靠近输入框的文字<br>
+        <code>aliases</code>：属性别名数组，匹配 <code>name</code> / <code>id</code> / <code>data-name</code><br>
+        <code>value</code>：要填入的值，留空则该字段不提示<br>
+        <br>
+        快捷键：<kbd>Ctrl</kbd> + <kbd>Enter</kbd> 填充当前提示 · <kbd>Alt</kbd> + <kbd>Z</kbd> 撤销最近一次填充 · <kbd>Esc</kbd> 隐藏提示
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+</body>
+
+</html>
